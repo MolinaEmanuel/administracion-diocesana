@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Inicio</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Inicio</h1>
+        <p id="subtitulo">Cargando...</p>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="label">Recaudado este mes</div>
+          <div class="value" id="metricMonto">—</div>
+          <div class="sub">en pagos registrados</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Miembros activos</div>
+          <div class="value" id="metricMiembros">—</div>
+          <div class="sub">en todos los lumisiales</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Pagos este mes</div>
+          <div class="value" id="metricPagos">—</div>
+          <div class="sub">comprobantes emitidos</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Lumisiales</div>
+          <div class="value" id="metricLumisiales">—</div>
+          <div class="sub">ciudades activas</div>
+        </div>
+      </div>
+
+      <h2 style="font-family:'Lora',serif;font-size:16px;color:var(--primary);margin-bottom:12px">Últimos pagos registrados</h2>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Miembro</th>
+              <th>Lumisial</th>
+              <th>Monto</th>
+              <th>Fecha</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="tablaPagos">
+            <tr><td colspan="5"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import { collection, getDocs, query, orderBy, limit, where, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  requireAuth(async () => {
+    const now = new Date();
+    const mesNombre = now.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+    document.getElementById('subtitulo').textContent = `Resumen de ${mesNombre}`;
+
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const finMes    = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Metrics
+    const [miembrosSnap, parroquiasSnap, pagosSnap] = await Promise.all([
+      getDocs(collection(db, 'miembros')),
+      getDocs(collection(db, 'parroquias')),
+      getDocs(query(collection(db, 'pagos'),
+        where('fecha', '>=', Timestamp.fromDate(inicioMes)),
+        where('fecha', '<=', Timestamp.fromDate(finMes))
+      )),
+    ]);
+
+    let totalMonto = 0;
+    pagosSnap.forEach(d => { totalMonto += d.data().monto || 0; });
+
+    document.getElementById('metricMiembros').textContent   = miembrosSnap.size;
+    document.getElementById('metricLumisiales').textContent = parroquiasSnap.size;
+    document.getElementById('metricPagos').textContent      = pagosSnap.size;
+    document.getElementById('metricMonto').textContent      = '$' + totalMonto.toLocaleString('es-AR');
+
+    // Last 10 payments
+    const ultimosSnap = await getDocs(query(collection(db, 'pagos'), orderBy('fecha', 'desc'), limit(10)));
+    const tbody = document.getElementById('tablaPagos');
+
+    if (ultimosSnap.empty) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><i class="ti ti-receipt-off"></i><p>No hay pagos registrados aún.</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = '';
+    ultimosSnap.forEach(doc => {
+      const p = doc.data();
+      const fecha = p.fecha?.toDate().toLocaleDateString('es-AR') || '—';
+      const badge = p.estado === 'pagado'
+        ? `<span class="badge badge-success"><i class="ti ti-check"></i> Pagado</span>`
+        : `<span class="badge badge-warning"><i class="ti ti-clock"></i> Pendiente</span>`;
+      tbody.innerHTML += `
+        <tr>
+          <td><span class="fw-500">${p.miembroNombre || '—'}</span></td>
+          <td><span class="badge badge-info">${p.parroquia || '—'}</span></td>
+          <td>$${(p.monto || 0).toLocaleString('es-AR')}</td>
+          <td>${fecha}</td>
+          <td>${badge}</td>
+        </tr>`;
+    });
+  });
+</script>
+</body>
+</html>

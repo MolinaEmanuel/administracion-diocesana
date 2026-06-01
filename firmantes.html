@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Firmantes</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+    .firmantes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .firmante-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+    }
+    .firmante-card .slot-num {
+      position: absolute;
+      top: 12px; left: 14px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-light);
+    }
+    .firmante-avatar {
+      width: 56px; height: 56px;
+      background: var(--primary-pale);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Lora', serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+    .firmante-nombre { font-weight: 500; font-size: 15px; color: var(--text); margin-bottom: 3px; }
+    .firmante-cargo  { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+    .firma-linea {
+      width: 140px;
+      border-top: 1px solid var(--text);
+      margin: 0 auto 8px;
+    }
+    .empty-slot {
+      border: 2px dashed var(--border-md);
+      background: transparent;
+    }
+    .empty-slot .firmante-avatar { background: var(--bg); }
+    .empty-slot .firmante-nombre { color: var(--text-muted); }
+
+    .firma-preview {
+      width: 200px; height: 80px;
+      border: 1px dashed var(--border-md);
+      border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px;
+      overflow: hidden; background: #fff;
+    }
+    .firma-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .firma-preview .placeholder { font-size: 12px; color: var(--text-light); }
+    .firmante-firma { margin-top: 8px; }
+    .firmante-firma img { max-width: 140px; max-height: 50px; object-fit: contain; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Firmantes</h1>
+        <p>Hasta 3 firmantes aparecen en los comprobantes</p>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="firmantes-grid" id="firmantesGrid">
+        <div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalFirmante">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="tricolor-bar"></div>
+      <div class="modal-header-inner">
+        <h2 id="modalTitulo">Firmante</h2>
+        <button class="btn btn-icon" id="btnCerrarModal"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="alertModal" class="alert alert-danger"></div>
+      <input type="hidden" id="firmanteId"/>
+      <input type="hidden" id="firmanteSlot"/>
+      <div class="form-group">
+        <label>Nombre completo *</label>
+        <input type="text" id="nombre" placeholder="Ej: Pbro. Juan García"/>
+      </div>
+      <div class="form-group">
+        <label>Cargo *</label>
+        <input type="text" id="cargo" placeholder="Ej: Rector / Tesorero / Secretario"/>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="notas" rows="2" placeholder="Observaciones opcionales..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Firma digital (imagen PNG/JPG)</label>
+        <div class="firma-preview" id="firmaPreview"><span class="placeholder">Sin firma cargada</span></div>
+        <input type="file" id="firmaArchivo" accept="image/*" style="font-size:13px"/>
+        <input type="hidden" id="firmaBase64"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc,
+    doc, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let firmantes = [];
+
+  requireAuth(async () => { await cargar(); });
+
+  async function cargar() {
+    const snap = await getDocs(query(collection(db, 'firmantes'), orderBy('slot')));
+    firmantes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderGrid();
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('firmantesGrid');
+    grid.innerHTML = '';
+    for (let slot = 1; slot <= 3; slot++) {
+      const f = firmantes.find(x => x.slot === slot);
+      const card = document.createElement('div');
+      card.className = `firmante-card${f ? '' : ' empty-slot'}`;
+      if (f) {
+        const initials = f.nombre.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase().substring(0,2);
+        card.innerHTML = `
+          <span class="slot-num">Firmante ${slot}</span>
+          <div class="firmante-avatar">${initials}</div>
+          <div class="firmante-nombre">${f.nombre}</div>
+          <div class="firmante-cargo">${f.cargo}</div>
+          <div class="firma-linea"></div>
+          <div class="firmante-firma">${f.firma ? `<img src="${f.firma}" alt="Firma de ${f.nombre}"/>` : '<span style="font-size:11px;color:var(--text-light)">Sin firma</span>'}</div>
+          <div class="d-flex gap-1 mt-1">
+            <button class="btn btn-sm btn-secondary" onclick="editar('${f.id}')"><i class="ti ti-pencil"></i> Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="eliminar('${f.id}')"><i class="ti ti-trash"></i></button>
+          </div>`;
+      } else {
+        card.innerHTML = `
+          <span class="slot-num">Firmante ${slot}</span>
+          <div class="firmante-avatar"><i class="ti ti-user-plus" style="font-size:22px;color:var(--text-light)"></i></div>
+          <div class="firmante-nombre">Sin asignar</div>
+          <div class="firmante-cargo">Slot disponible</div>
+          <button class="btn btn-sm btn-primary" onclick="agregar(${slot})"><i class="ti ti-plus"></i> Asignar firmante</button>`;
+      }
+      grid.appendChild(card);
+    }
+  }
+
+  const modal      = document.getElementById('modalFirmante');
+  const alertModal = document.getElementById('alertModal');
+  const abrir  = () => { alertModal.classList.remove('show'); modal.classList.add('open'); };
+  const cerrar = () => modal.classList.remove('open');
+
+  window.agregar = (slot) => {
+    document.getElementById('modalTitulo').textContent = `Asignar firmante ${slot}`;
+    document.getElementById('firmanteId').value   = '';
+    document.getElementById('firmanteSlot').value = slot;
+    document.getElementById('nombre').value = '';
+    document.getElementById('cargo').value  = '';
+    document.getElementById('notas').value  = '';
+    abrir();
+  };
+
+  window.editar = (id) => {
+    const f = firmantes.find(x => x.id === id);
+    if (!f) return;
+    document.getElementById('modalTitulo').textContent = `Editar firmante ${f.slot}`;
+    document.getElementById('firmanteId').value   = f.id;
+    document.getElementById('firmanteSlot').value = f.slot;
+    document.getElementById('nombre').value = f.nombre || '';
+    document.getElementById('cargo').value  = f.cargo  || '';
+    document.getElementById('notas').value  = f.notas  || '';
+    document.getElementById('firmaBase64').value = f.firma || '';
+    document.getElementById('firmaArchivo').value = '';
+    document.getElementById('firmaPreview').innerHTML = f.firma
+      ? `<img src="${f.firma}" alt="Firma"/>`
+      : '<span class="placeholder">Sin firma cargada</span>';
+    abrir();
+  };
+
+  window.eliminar = async (id) => {
+    if (!confirm('¿Quitar este firmante?')) return;
+    await deleteDoc(doc(db, 'firmantes', id));
+    await cargar();
+  };
+
+  // Firma preview
+  document.getElementById('firmaArchivo').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const b64 = ev.target.result;
+      document.getElementById('firmaBase64').value = b64;
+      document.getElementById('firmaPreview').innerHTML = `<img src="${b64}" alt="Firma"/>`;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('btnCerrarModal').addEventListener('click', cerrar);
+  document.getElementById('btnCancelar').addEventListener('click', cerrar);
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const nombre = document.getElementById('nombre').value.trim();
+    const cargo  = document.getElementById('cargo').value.trim();
+    alertModal.classList.remove('show');
+    if (!nombre || !cargo) {
+      alertModal.textContent = 'Nombre y cargo son obligatorios.';
+      alertModal.classList.add('show');
+      return;
+    }
+    const datos = {
+      nombre, cargo,
+      slot:      parseInt(document.getElementById('firmanteSlot').value),
+      notas:     document.getElementById('notas').value.trim(),
+      firma:     document.getElementById('firmaBase64').value || '',
+      updatedAt: serverTimestamp(),
+    };
+    const id = document.getElementById('firmanteId').value;
+    if (id) {
+      await updateDoc(doc(db, 'firmantes', id), datos);
+    } else {
+      datos.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'firmantes'), datos);
+    }
+    cerrar();
+    await cargar();
+  });
+</script>
+</body>
+</html>

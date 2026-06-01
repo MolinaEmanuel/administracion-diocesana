@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Lumisiales</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Lumisiales</h1>
+        <p>Ciudades y lumisiales de la diócesis</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="btnNueva"><i class="ti ti-plus"></i> Nuevo lumisial</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Ciudad</th>
+              <th>Dirección</th>
+              <th>Responsable</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaLumisiales">
+            <tr><td colspan="5"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalParroquia">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="tricolor-bar"></div>
+      <div class="modal-header-inner">
+        <h2 id="modalTitulo">Nuevo lumisial</h2>
+        <button class="btn btn-icon" id="btnCerrarModal"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="alertModal" class="alert alert-danger"></div>
+      <input type="hidden" id="parroquiaId"/>
+      <div class="form-group">
+        <label>Nombre del lumisial *</label>
+        <input type="text" id="nombre" placeholder="Ej: Lumisial San Martín"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ciudad *</label>
+          <input type="text" id="ciudad" placeholder="Ej: Ushuaia"/>
+        </div>
+        <div class="form-group">
+          <label>Provincia</label>
+          <input type="text" id="provincia" placeholder="Ej: Tierra del Fuego"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input type="text" id="direccion" placeholder="Calle y número"/>
+      </div>
+      <div class="form-group">
+        <label>Responsable / Rector</label>
+        <input type="text" id="responsable" placeholder="Nombre del responsable"/>
+      </div>
+      <div class="form-group">
+        <label>Teléfono de contacto</label>
+        <input type="text" id="telefono" placeholder="Ej: 2901-123456"/>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="notas" rows="2" placeholder="Observaciones opcionales..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc,
+    doc, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let parroquias = [];
+
+  requireAuth(async () => { await cargar(); });
+
+  async function cargar() {
+    const snap = await getDocs(query(collection(db, 'parroquias'), orderBy('nombre')));
+    parroquias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const tbody = document.getElementById('tablaLumisiales');
+    if (!parroquias.length) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><i class="ti ti-building-off"></i><p>No hay lumisiales registrados.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = parroquias.map(p => `
+      <tr>
+        <td class="fw-500">${p.nombre}</td>
+        <td>${p.ciudad || '—'}</td>
+        <td class="text-small text-muted">${p.direccion || '—'}</td>
+        <td>${p.responsable || '—'}</td>
+        <td>
+          <div class="d-flex gap-1">
+            <button class="btn btn-icon" onclick="editar('${p.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+            <button class="btn btn-icon btn-danger" onclick="eliminar('${p.id}')" title="Eliminar"><i class="ti ti-trash"></i></button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  const modal      = document.getElementById('modalParroquia');
+  const alertModal = document.getElementById('alertModal');
+  const abrir = () => { alertModal.classList.remove('show'); modal.classList.add('open'); };
+  const cerrar = () => modal.classList.remove('open');
+
+  document.getElementById('btnNueva').addEventListener('click', () => {
+    document.getElementById('modalTitulo').textContent = 'Nuevo lumisial';
+    document.getElementById('parroquiaId').value = '';
+    ['nombre','ciudad','provincia','direccion','responsable','telefono','notas'].forEach(id =>
+      document.getElementById(id).value = '');
+    abrir();
+  });
+
+  document.getElementById('btnCerrarModal').addEventListener('click', cerrar);
+  document.getElementById('btnCancelar').addEventListener('click', cerrar);
+
+  window.editar = (id) => {
+    const p = parroquias.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('modalTitulo').textContent = 'Editar lumisial';
+    document.getElementById('parroquiaId').value  = p.id;
+    document.getElementById('nombre').value       = p.nombre || '';
+    document.getElementById('ciudad').value       = p.ciudad || '';
+    document.getElementById('provincia').value    = p.provincia || '';
+    document.getElementById('direccion').value    = p.direccion || '';
+    document.getElementById('responsable').value  = p.responsable || '';
+    document.getElementById('telefono').value     = p.telefono || '';
+    document.getElementById('notas').value        = p.notas || '';
+    abrir();
+  };
+
+  window.eliminar = async (id) => {
+    if (!confirm('¿Eliminar este lumisial?')) return;
+    await deleteDoc(doc(db, 'parroquias', id));
+    await cargar();
+  };
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const nombre = document.getElementById('nombre').value.trim();
+    const ciudad = document.getElementById('ciudad').value.trim();
+    alertModal.classList.remove('show');
+    if (!nombre || !ciudad) {
+      alertModal.textContent = 'Nombre y ciudad son obligatorios.';
+      alertModal.classList.add('show');
+      return;
+    }
+    const datos = {
+      nombre, ciudad,
+      provincia:   document.getElementById('provincia').value.trim(),
+      direccion:   document.getElementById('direccion').value.trim(),
+      responsable: document.getElementById('responsable').value.trim(),
+      telefono:    document.getElementById('telefono').value.trim(),
+      notas:       document.getElementById('notas').value.trim(),
+      updatedAt:   serverTimestamp(),
+    };
+    const id = document.getElementById('parroquiaId').value;
+    if (id) {
+      await updateDoc(doc(db, 'parroquias', id), datos);
+    } else {
+      datos.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'parroquias'), datos);
+    }
+    cerrar();
+    await cargar();
+  });
+</script>
+</body>
+</html>

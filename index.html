@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Ingresar</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <img src="assets/images/logo-gnosis.png" alt="Logo Gnosis" style="width:130px;height:130px;object-fit:contain;margin-bottom:7px"/>
+        <h1>Administración Diocesana TDF y Sur Santa Cruz</h1>
+        <p>Ingresá con tu cuenta autorizada</p>
+      </div>
+      <div id="alert" class="alert alert-danger"></div>
+      <div class="form-group">
+        <label>Correo electrónico</label>
+        <input type="email" id="email" placeholder="usuario@diocesis.org"/>
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="password" placeholder="••••••••"/>
+      </div>
+      <button class="btn btn-primary btn-full" id="btnLogin">
+        <i class="ti ti-login"></i> Ingresar
+      </button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth } from './js/firebase-config.js';
+    import { signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    onAuthStateChanged(auth, user => {
+      if (user) window.location.href = 'dashboard.html';
+    });
+
+    document.getElementById('btnLogin').addEventListener('click', async () => {
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const alert    = document.getElementById('alert');
+      alert.classList.remove('show');
+
+      if (!email || !password) {
+        alert.textContent = 'Completá todos los campos.';
+        alert.classList.add('show');
+        return;
+      }
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        window.location.href = 'dashboard.html';
+      } catch (e) {
+        alert.textContent = 'Correo o contraseña incorrectos.';
+        alert.classList.add('show');
+      }
+    });
+  </script>
+</body>
+</html>

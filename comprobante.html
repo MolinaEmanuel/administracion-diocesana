@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Comprobante</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    .comprobante-wrap { max-width: 720px; margin: 0 auto; }
+    .recibo {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 40px 48px;
+      box-shadow: var(--shadow);
+    }
+    .recibo-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; border-bottom: 2px solid var(--primary); padding-bottom: 20px; }
+    .recibo-logo h2 { font-family: 'Lora', serif; font-size: 20px; color: var(--primary); font-weight: 600; }
+    .recibo-logo p  { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .recibo-num { text-align: right; }
+    .recibo-num .num { font-family: 'Lora', serif; font-size: 22px; font-weight: 600; color: var(--primary); }
+    .recibo-num .fecha { font-size: 12px; color: var(--text-muted); }
+    .recibo-section { margin-bottom: 24px; }
+    .recibo-section h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .recibo-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+    .recibo-row .key { color: var(--text-muted); }
+    .recibo-row .val { font-weight: 500; color: var(--text); }
+    .monto-grande { text-align: center; padding: 20px; background: var(--primary-pale); border-radius: var(--radius); margin: 24px 0; }
+    .monto-grande .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 4px; }
+    .monto-grande .valor { font-family: 'Lora', serif; font-size: 36px; font-weight: 600; color: var(--primary); }
+    .firmantes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+    .firmante { text-align: center; }
+    .firmante .linea { border-top: 1px solid var(--text); padding-top: 6px; margin-top: 32px; }
+    .firmante .nombre { font-size: 13px; font-weight: 500; color: var(--text); }
+    .firmante .cargo  { font-size: 11px; color: var(--text-muted); }
+    .recibo-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text-light); }
+    @media print {
+      .topbar, .sidebar, .topbar-actions, .no-print { display: none !important; }
+      .main-content { margin-left: 0 !important; }
+      .page-content { padding: 0 !important; }
+      .recibo { border: none; box-shadow: none; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar no-print">
+      <div class="topbar-title">
+        <h1>Comprobantes de pago</h1>
+        <p id="subtitulo">Recibos</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" onclick="history.back()"><i class="ti ti-arrow-left"></i> Volver</button>
+        <button class="btn btn-secondary" onclick="window.print()"><i class="ti ti-printer"></i> Imprimir</button>
+        <button class="btn btn-primary" id="btnPDF"><i class="ti ti-file-download"></i> Descargar PDF</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="comprobante-wrap">
+        <div id="recibo" class="recibo">
+          <div class="empty-state"><i class="ti ti-loader"></i><p>Cargando comprobante...</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let datosPago = null;
+
+  requireAuth(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const pagoId = params.get('pago');
+    if (!pagoId) {
+      document.getElementById('recibo').innerHTML = `<div class="empty-state"><i class="ti ti-alert-circle"></i><p>No se especificó un pago.</p></div>`;
+      return;
+    }
+
+    const [pagoSnap, firmantesSnap, configSnap] = await Promise.all([
+      getDoc(doc(db, 'pagos', pagoId)),
+      getDocs(collection(db, 'firmantes')),
+      getDoc(doc(db, 'config', 'diocesis')),
+    ]);
+
+    if (!pagoSnap.exists()) {
+      document.getElementById('recibo').innerHTML = `<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Pago no encontrado.</p></div>`;
+      return;
+    }
+
+    datosPago = { id: pagoSnap.id, ...pagoSnap.data() };
+    const firmantes = firmantesSnap.docs.map(d => d.data()).slice(0, 3);
+    const config    = configSnap.exists() ? configSnap.data() : {};
+
+    document.getElementById('subtitulo').textContent = `${datosPago.miembroNombre} — ${datosPago.fecha?.toDate().toLocaleDateString('es-AR')}`;
+
+    const fecha   = datosPago.fecha?.toDate();
+    const fechaStr = fecha ? fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+    const nroComp = datosPago.id.substring(0, 8).toUpperCase();
+
+    // Monto en palabras (básico)
+    const montoStr = `$${(datosPago.monto || 0).toLocaleString('es-AR')}`;
+
+    const firmantesHTML = firmantes.length
+      ? firmantes.map(f => `
+          <div class="firmante">
+            ${f.firma ? `<div style="height:50px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px"><img src="${f.firma}" alt="Firma" style="max-height:48px;max-width:140px;object-fit:contain"/></div>` : '<div style="height:54px"></div>'}
+            <div class="linea">
+              <div class="nombre">${f.nombre}</div>
+              <div class="cargo">${f.cargo}</div>
+            </div>
+          </div>`).join('')
+      : `<div class="firmante"><div class="linea"><div class="nombre">_______________</div><div class="cargo">Firmante</div></div></div>`.repeat(3);
+
+    document.getElementById('recibo').innerHTML = `
+      <div class="recibo-header">
+        <div class="recibo-logo">
+          <h2>${config.nombre || 'Diócesis'}</h2>
+          <p>${config.direccion || ''}</p>
+          <p>${config.ciudad || ''}</p>
+        </div>
+        <div class="recibo-num">
+          <div class="num">N° ${nroComp}</div>
+          <div class="fecha">${fechaStr}</div>
+        </div>
+      </div>
+
+      <div class="recibo-section">
+        <h3>Datos del contribuyente</h3>
+        <div class="recibo-row"><span class="key">Nombre y apellido</span><span class="val">${datosPago.miembroNombre || '—'}</span></div>
+        <div class="recibo-row"><span class="key">Lumisial</span><span class="val">${datosPago.parroquia || '—'}</span></div>
+        <div class="recibo-row"><span class="key">Período</span><span class="val">${datosPago.periodo || '—'}</span></div>
+      </div>
+
+      <div class="recibo-section">
+        <h3>Detalle del pago</h3>
+        <div class="recibo-row"><span class="key">Concepto</span><span class="val">${datosPago.concepto || 'Diezmo'}</span></div>
+        <div class="recibo-row"><span class="key">Estado</span><span class="val">${datosPago.estado === 'pagado' ? 'Pagado' : 'Pendiente'}</span></div>
+        ${datosPago.observaciones ? `<div class="recibo-row"><span class="key">Observaciones</span><span class="val">${datosPago.observaciones}</span></div>` : ''}
+      </div>
+
+      <div class="monto-grande">
+        <div class="label">Total recibido</div>
+        <div class="valor">${montoStr}</div>
+      </div>
+
+      <div class="firmantes">${firmantesHTML}</div>
+
+      <div class="recibo-footer">
+        Este comprobante acredita la recepción de la donación o diezmo indicado.<br>
+        ${config.nombre || 'Diócesis'} — Organización sin fines de lucro.
+      </div>`;
+  });
+
+  // PDF generation
+  document.getElementById('btnPDF').addEventListener('click', () => {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+
+    if (!datosPago) return;
+
+    const p = datosPago;
+    const fecha = p.fecha?.toDate().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }) || '—';
+    const nro   = p.id.substring(0, 8).toUpperCase();
+    const monto = `$${(p.monto || 0).toLocaleString('es-AR')}`;
+
+    // Header
+    pdf.setFillColor(59, 47, 107);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Comprobante de Pago', 20, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`N° ${nro}`, 20, 20);
+    pdf.text(fecha, 170, 20, { align: 'right' });
+
+    // Body
+    pdf.setTextColor(30, 30, 50);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Datos del contribuyente', 20, 42);
+    pdf.setDrawColor(200, 200, 220);
+    pdf.line(20, 44, 190, 44);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Nombre:', 20, 52);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(p.miembroNombre || '—', 70, 52);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Lumisial:', 20, 60);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(p.parroquia || '—', 70, 60);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Período:', 20, 68);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(p.periodo || '—', 70, 68);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.text('Detalle del pago', 20, 84);
+    pdf.line(20, 86, 190, 86);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Concepto:', 20, 94);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(p.concepto || 'Diezmo', 70, 94);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Estado:', 20, 102);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(p.estado === 'pagado' ? 'Pagado' : 'Pendiente', 70, 102);
+
+    // Monto box
+    pdf.setFillColor(238, 237, 254);
+    pdf.roundedRect(20, 116, 170, 24, 4, 4, 'F');
+    pdf.setTextColor(59, 47, 107);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('TOTAL RECIBIDO', 105, 124, { align: 'center' });
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(monto, 105, 134, { align: 'center' });
+
+    // Firma lines
+    pdf.setTextColor(30, 30, 50);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    const firmaY = 185;
+    [40, 105, 170].forEach(x => {
+      pdf.setDrawColor(100, 100, 120);
+      pdf.line(x - 20, firmaY, x + 20, firmaY);
+      pdf.text('Firmante', x, firmaY + 5, { align: 'center' });
+    });
+
+    // Footer
+    pdf.setFontSize(8);
+    pdf.setTextColor(150, 150, 170);
+    pdf.text('Organización sin fines de lucro. Este comprobante acredita la recepción de la donación o diezmo indicado.', 105, 280, { align: 'center' });
+
+    pdf.save(`comprobante-${nro}.pdf`);
+  });
+</script>
+</body>
+</html>

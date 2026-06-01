@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Ajustes</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+    .settings-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 32px;
+      max-width: 600px;
+      box-shadow: var(--shadow);
+    }
+    .settings-card h2 {
+      font-family: 'Lora', serif;
+      font-size: 16px;
+      color: var(--primary);
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Ajustes</h1>
+        <p>Configuración general de la diócesis</p>
+      </div>
+    </div>
+    <div class="page-content">
+      <div id="alertGuardado" class="alert alert-success" style="max-width:600px">Configuración guardada correctamente.</div>
+      <div id="alertError"    class="alert alert-danger"  style="max-width:600px">Ocurrió un error al guardar.</div>
+
+      <div class="settings-card">
+        <div class="settings-card-header"></div>
+        <div class="settings-card-body">
+        <h2><i class="ti ti-building-church" style="margin-right:8px"></i>Datos de la diócesis</h2>
+        <div class="form-group">
+          <label>Nombre oficial *</label>
+          <input type="text" id="nombre" placeholder="Ej: Diócesis de Ushuaia"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Ciudad sede</label>
+            <input type="text" id="ciudad" placeholder="Ej: Ushuaia"/>
+          </div>
+          <div class="form-group">
+            <label>Provincia</label>
+            <input type="text" id="provincia" placeholder="Ej: Tierra del Fuego"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Dirección</label>
+          <input type="text" id="direccion" placeholder="Calle y número"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="text" id="telefono" placeholder="Ej: 2901-123456"/>
+          </div>
+          <div class="form-group">
+            <label>Correo institucional</label>
+            <input type="email" id="correo" placeholder="contacto@diocesis.org"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Texto pie de comprobante</label>
+          <textarea id="pieComprobante" rows="2" placeholder="Texto que aparece al pie de cada comprobante..."></textarea>
+        </div>
+
+        <div style="margin-top:8px">
+          <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar cambios</button>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  requireAuth(async () => {
+    const snap = await getDoc(doc(db, 'config', 'diocesis'));
+    if (snap.exists()) {
+      const d = snap.data();
+      document.getElementById('nombre').value         = d.nombre         || '';
+      document.getElementById('ciudad').value         = d.ciudad         || '';
+      document.getElementById('provincia').value      = d.provincia      || '';
+      document.getElementById('direccion').value      = d.direccion      || '';
+      document.getElementById('telefono').value       = d.telefono       || '';
+      document.getElementById('correo').value         = d.correo         || '';
+      document.getElementById('pieComprobante').value = d.pieComprobante || '';
+    }
+  });
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const nombre = document.getElementById('nombre').value.trim();
+    document.getElementById('alertGuardado').classList.remove('show');
+    document.getElementById('alertError').classList.remove('show');
+
+    if (!nombre) {
+      document.getElementById('alertError').textContent = 'El nombre de la diócesis es obligatorio.';
+      document.getElementById('alertError').classList.add('show');
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, 'config', 'diocesis'), {
+        nombre,
+        ciudad:         document.getElementById('ciudad').value.trim(),
+        provincia:      document.getElementById('provincia').value.trim(),
+        direccion:      document.getElementById('direccion').value.trim(),
+        telefono:       document.getElementById('telefono').value.trim(),
+        correo:         document.getElementById('correo').value.trim(),
+        pieComprobante: document.getElementById('pieComprobante').value.trim(),
+        updatedAt:      serverTimestamp(),
+      });
+      document.getElementById('alertGuardado').classList.add('show');
+      setTimeout(() => document.getElementById('alertGuardado').classList.remove('show'), 3000);
+    } catch (e) {
+      document.getElementById('alertError').textContent = 'Error al guardar: ' + e.message;
+      document.getElementById('alertError').classList.add('show');
+    }
+  });
+</script>
+</body>
+</html>
