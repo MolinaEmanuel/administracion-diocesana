@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Pagos</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Pagos y donaciones</h1>
+        <p>Registro de pagos y emisión de comprobantes</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="btnNuevoPago"><i class="ti ti-plus"></i> Registrar pago</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="filter-bar">
+        <div class="search-input">
+          <i class="ti ti-search"></i>
+          <input type="text" id="buscar" placeholder="Buscar por nombre..."/>
+        </div>
+        <select class="filter-select" id="filtroParroquia"><option value="">Todos los lumisiales</option></select>
+        <select class="filter-select" id="filtroMes"><option value="">Todos los meses</option></select>
+        <select class="filter-select" id="filtroEstado">
+          <option value="">Todos los estados</option>
+          <option value="pagado">Pagado</option>
+          <option value="pendiente">Pendiente</option>
+        </select>
+      </div>
+
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Miembro</th>
+              <th>Lumisial</th>
+              <th>Concepto</th>
+              <th>Monto</th>
+              <th>Fecha</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaPagos">
+            <tr><td colspan="7"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Pago -->
+<div class="modal-overlay" id="modalPago">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="tricolor-bar"></div>
+      <div class="modal-header-inner">
+        <h2 id="modalTitulo">Registrar pago</h2>
+        <button class="btn btn-icon" id="btnCerrarModal"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="alertModal" class="alert alert-danger"></div>
+      <input type="hidden" id="pagoId"/>
+      <div class="form-group">
+        <label>Miembro *</label>
+        <select id="miembroSelect"><option value="">Seleccioná un miembro</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Concepto *</label>
+          <select id="concepto">
+            <option value="Diezmo">Diezmo</option>
+            <option value="Donación voluntaria">Donación voluntaria</option>
+            <option value="Ofrenda especial">Ofrenda especial</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Monto ($) *</label>
+          <input type="number" id="monto" placeholder="Ej: 5000" min="1"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Fecha *</label>
+          <input type="date" id="fecha"/>
+        </div>
+        <div class="form-group">
+          <label>Período (mes/año)</label>
+          <input type="month" id="periodo"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <select id="estado">
+          <option value="pagado">Pagado</option>
+          <option value="pendiente">Pendiente</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Observaciones</label>
+        <textarea id="observaciones" rows="2" placeholder="Notas opcionales..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc,
+    doc, query, orderBy, serverTimestamp, Timestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let pagos    = [];
+  let miembros = [];
+
+  requireAuth(async () => {
+    await cargarMiembros();
+    await cargarPagos();
+    setupFiltros();
+    prefillFromURL();
+  });
+
+  function prefillFromURL() {
+    const params  = new URLSearchParams(window.location.search);
+    const midId   = params.get('miembro');
+    if (midId) {
+      document.getElementById('miembroSelect').value = midId;
+      abrirModal();
+    }
+  }
+
+  async function cargarMiembros() {
+    const snap = await getDocs(query(collection(db, 'miembros'), orderBy('apellido')));
+    miembros = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sel = document.getElementById('miembroSelect');
+    miembros.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = `${m.apellido}, ${m.nombre} — ${m.parroquia}`;
+      sel.appendChild(opt);
+    });
+
+    // Lumisial filter
+    const parroquias = [...new Set(miembros.map(m => m.parroquia).filter(Boolean))].sort();
+    const fp = document.getElementById('filtroParroquia');
+    parroquias.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      fp.appendChild(opt);
+    });
+  }
+
+  async function cargarPagos() {
+    const snap = await getDocs(query(collection(db, 'pagos'), orderBy('fecha', 'desc')));
+    pagos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Populate month filter
+    const meses = [...new Set(pagos.map(p => {
+      const f = p.fecha?.toDate();
+      if (!f) return null;
+      return f.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+    }).filter(Boolean))];
+    const fm = document.getElementById('filtroMes');
+    meses.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      fm.appendChild(opt);
+    });
+
+    renderTabla(pagos);
+  }
+
+  function renderTabla(lista) {
+    const tbody = document.getElementById('tablaPagos');
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><i class="ti ti-receipt-off"></i><p>No hay pagos registrados.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lista.map(p => {
+      const fecha = p.fecha?.toDate().toLocaleDateString('es-AR') || '—';
+      const badge = p.estado === 'pagado'
+        ? `<span class="badge badge-success"><i class="ti ti-check"></i> Pagado</span>`
+        : `<span class="badge badge-warning"><i class="ti ti-clock"></i> Pendiente</span>`;
+      return `
+        <tr>
+          <td><span class="fw-500">${p.miembroNombre || '—'}</span></td>
+          <td><span class="badge badge-info">${p.parroquia || '—'}</span></td>
+          <td>${p.concepto || 'Diezmo'}</td>
+          <td class="fw-500">$${(p.monto || 0).toLocaleString('es-AR')}</td>
+          <td>${fecha}</td>
+          <td>${badge}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <button class="btn btn-icon" onclick="editarPago('${p.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+              <button class="btn btn-icon" onclick="verComprobante('${p.id}')" title="Comprobante"><i class="ti ti-file-text"></i></button>
+              <button class="btn btn-icon btn-danger" onclick="eliminarPago('${p.id}')" title="Eliminar"><i class="ti ti-trash"></i></button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function setupFiltros() {
+    const filtrar = () => {
+      const texto  = document.getElementById('buscar').value.toLowerCase();
+      const parr   = document.getElementById('filtroParroquia').value;
+      const mes    = document.getElementById('filtroMes').value;
+      const estado = document.getElementById('filtroEstado').value;
+      renderTabla(pagos.filter(p => {
+        const nombre  = (p.miembroNombre || '').toLowerCase();
+        const fechaMes = p.fecha?.toDate().toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+        return (!texto  || nombre.includes(texto))
+          &&   (!parr   || p.parroquia === parr)
+          &&   (!mes    || fechaMes === mes)
+          &&   (!estado || p.estado === estado);
+      }));
+    };
+    ['buscar','filtroParroquia','filtroMes','filtroEstado'].forEach(id =>
+      document.getElementById(id).addEventListener('input', filtrar));
+  }
+
+  // Modal
+  const modal      = document.getElementById('modalPago');
+  const alertModal = document.getElementById('alertModal');
+
+  function abrirModal() { alertModal.classList.remove('show'); modal.classList.add('open'); }
+  function cerrarModal() { modal.classList.remove('open'); }
+
+  document.getElementById('btnNuevoPago').addEventListener('click', () => {
+    document.getElementById('modalTitulo').textContent = 'Registrar pago';
+    document.getElementById('pagoId').value = '';
+    document.getElementById('miembroSelect').value = '';
+    document.getElementById('monto').value   = '';
+    document.getElementById('observaciones').value = '';
+    document.getElementById('concepto').value = 'Diezmo';
+    document.getElementById('estado').value   = 'pagado';
+    document.getElementById('fecha').value    = new Date().toISOString().split('T')[0];
+    const hoy = new Date();
+    document.getElementById('periodo').value  = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+    abrirModal();
+  });
+
+  document.getElementById('btnCerrarModal').addEventListener('click', cerrarModal);
+  document.getElementById('btnCancelar').addEventListener('click', cerrarModal);
+
+  window.editarPago = (id) => {
+    const p = pagos.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('modalTitulo').textContent  = 'Editar pago';
+    document.getElementById('pagoId').value             = p.id;
+    document.getElementById('miembroSelect').value      = p.miembroId || '';
+    document.getElementById('concepto').value           = p.concepto || 'Diezmo';
+    document.getElementById('monto').value              = p.monto || '';
+    document.getElementById('estado').value             = p.estado || 'pagado';
+    document.getElementById('observaciones').value      = p.observaciones || '';
+    if (p.fecha) {
+      const f = p.fecha.toDate();
+      document.getElementById('fecha').value   = f.toISOString().split('T')[0];
+      document.getElementById('periodo').value = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}`;
+    }
+    abrirModal();
+  };
+
+  window.eliminarPago = async (id) => {
+    if (!confirm('¿Eliminar este pago?')) return;
+    await deleteDoc(doc(db, 'pagos', id));
+    await cargarPagos();
+  };
+
+  window.verComprobante = (id) => {
+    window.location.href = `comprobante.html?pago=${id}`;
+  };
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const miembroId = document.getElementById('miembroSelect').value;
+    const monto     = parseFloat(document.getElementById('monto').value);
+    const fechaVal  = document.getElementById('fecha').value;
+    alertModal.classList.remove('show');
+
+    if (!miembroId || !monto || !fechaVal) {
+      alertModal.textContent = 'Miembro, monto y fecha son obligatorios.';
+      alertModal.classList.add('show');
+      return;
+    }
+
+    const miembro = miembros.find(m => m.id === miembroId);
+    const datos = {
+      miembroId,
+      miembroNombre: `${miembro.apellido}, ${miembro.nombre}`,
+      parroquia:     miembro.parroquia || '',
+      concepto:      document.getElementById('concepto').value,
+      monto,
+      fecha:         Timestamp.fromDate(new Date(fechaVal + 'T12:00:00')),
+      periodo:       document.getElementById('periodo').value,
+      estado:        document.getElementById('estado').value,
+      observaciones: document.getElementById('observaciones').value.trim(),
+      updatedAt:     serverTimestamp(),
+    };
+
+    const id = document.getElementById('pagoId').value;
+    if (id) {
+      await updateDoc(doc(db, 'pagos', id), datos);
+    } else {
+      datos.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'pagos'), datos);
+    }
+
+    cerrarModal();
+    await cargarPagos();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Usuarios</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Usuarios</h1>
+        <p>Administración de accesos al sistema</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="btnNuevo"><i class="ti ti-plus"></i> Nuevo usuario</button>
+      </div>
+    </div>
+    <div class="page-content">
+
+      <div style="background:var(--warning-bg);border:1px solid rgba(133,79,11,0.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:13px;color:var(--warning);display:flex;gap:10px;align-items:flex-start">
+        <i class="ti ti-info-circle" style="font-size:18px;flex-shrink:0;margin-top:1px"></i>
+        <span>Los usuarios se crean directamente en <strong>Firebase Authentication</strong>. Desde acá podés registrar sus datos y roles en el sistema. Para crear la cuenta de acceso, usá la consola de Firebase o el botón de invitación.</span>
+      </div>
+
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Correo</th>
+              <th>Rol</th>
+              <th>Lumisial</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaUsuarios">
+            <tr><td colspan="6"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalUsuario">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="tricolor-bar"></div>
+      <div class="modal-header-inner">
+        <h2 id="modalTitulo">Nuevo usuario</h2>
+        <button class="btn btn-icon" id="btnCerrarModal"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="alertModal" class="alert alert-danger"></div>
+      <input type="hidden" id="usuarioId"/>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" id="nombre" placeholder="Nombre"/>
+        </div>
+        <div class="form-group">
+          <label>Apellido *</label>
+          <input type="text" id="apellido" placeholder="Apellido"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Correo electrónico *</label>
+        <input type="email" id="correo" placeholder="usuario@diocesis.org"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Rol *</label>
+          <select id="rol">
+            <option value="admin">Administrador</option>
+            <option value="tesorero">Tesorero</option>
+            <option value="secretario">Secretario</option>
+            <option value="lector">Solo lectura</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Lumisial asignado</label>
+          <select id="parroquia"><option value="">Todas</option></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <select id="estado">
+          <option value="activo">Activo</option>
+          <option value="inactivo">Inactivo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="notas" rows="2" placeholder="Observaciones opcionales..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc,
+    doc, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let usuarios   = [];
+  let parroquias = [];
+
+  requireAuth(async () => {
+    await cargarLumisiales();
+    await cargar();
+  });
+
+  async function cargarLumisiales() {
+    const snap = await getDocs(collection(db, 'parroquias'));
+    parroquias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sel = document.getElementById('parroquia');
+    parroquias.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.nombre; opt.textContent = p.nombre;
+      sel.appendChild(opt);
+    });
+  }
+
+  const roles = { admin: 'Administrador', tesorero: 'Tesorero', secretario: 'Secretario', lector: 'Solo lectura' };
+
+  async function cargar() {
+    const snap = await getDocs(query(collection(db, 'usuarios'), orderBy('apellido')));
+    usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const tbody = document.getElementById('tablaUsuarios');
+    if (!usuarios.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="ti ti-users-off"></i><p>No hay usuarios registrados.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = usuarios.map(u => `
+      <tr>
+        <td class="fw-500">${u.apellido}, ${u.nombre}</td>
+        <td class="text-small">${u.correo || '—'}</td>
+        <td><span class="badge badge-info">${roles[u.rol] || u.rol || '—'}</span></td>
+        <td>${u.parroquia || '<span class="text-muted">Todas</span>'}</td>
+        <td>${u.estado === 'activo'
+          ? '<span class="badge badge-success">Activo</span>'
+          : '<span class="badge badge-warning">Inactivo</span>'}</td>
+        <td>
+          <div class="d-flex gap-1">
+            <button class="btn btn-icon" onclick="editar('${u.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+            <button class="btn btn-icon btn-danger" onclick="eliminar('${u.id}')" title="Eliminar"><i class="ti ti-trash"></i></button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  const modal      = document.getElementById('modalUsuario');
+  const alertModal = document.getElementById('alertModal');
+  const abrir  = () => { alertModal.classList.remove('show'); modal.classList.add('open'); };
+  const cerrar = () => modal.classList.remove('open');
+
+  document.getElementById('btnNuevo').addEventListener('click', () => {
+    document.getElementById('modalTitulo').textContent = 'Nuevo usuario';
+    document.getElementById('usuarioId').value = '';
+    ['nombre','apellido','correo','notas'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('rol').value    = 'tesorero';
+    document.getElementById('estado').value = 'activo';
+    document.getElementById('parroquia').value = '';
+    abrir();
+  });
+
+  document.getElementById('btnCerrarModal').addEventListener('click', cerrar);
+  document.getElementById('btnCancelar').addEventListener('click', cerrar);
+
+  window.editar = (id) => {
+    const u = usuarios.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('modalTitulo').textContent = 'Editar usuario';
+    document.getElementById('usuarioId').value  = u.id;
+    document.getElementById('nombre').value     = u.nombre   || '';
+    document.getElementById('apellido').value   = u.apellido || '';
+    document.getElementById('correo').value     = u.correo   || '';
+    document.getElementById('rol').value        = u.rol      || 'lector';
+    document.getElementById('estado').value     = u.estado   || 'activo';
+    document.getElementById('parroquia').value  = u.parroquia|| '';
+    document.getElementById('notas').value      = u.notas    || '';
+    abrir();
+  };
+
+  window.eliminar = async (id) => {
+    if (!confirm('¿Eliminar este usuario del registro?')) return;
+    await deleteDoc(doc(db, 'usuarios', id));
+    await cargar();
+  };
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const nombre   = document.getElementById('nombre').value.trim();
+    const apellido = document.getElementById('apellido').value.trim();
+    const correo   = document.getElementById('correo').value.trim();
+    alertModal.classList.remove('show');
+    if (!nombre || !apellido || !correo) {
+      alertModal.textContent = 'Nombre, apellido y correo son obligatorios.';
+      alertModal.classList.add('show');
+      return;
+    }
+    const datos = {
+      nombre, apellido, correo,
+      rol:       document.getElementById('rol').value,
+      estado:    document.getElementById('estado').value,
+      parroquia: document.getElementById('parroquia').value,
+      notas:     document.getElementById('notas').value.trim(),
+      updatedAt: serverTimestamp(),
+    };
+    const id = document.getElementById('usuarioId').value;
+    if (id) {
+      await updateDoc(doc(db, 'usuarios', id), datos);
+    } else {
+      datos.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'usuarios'), datos);
+    }
+    cerrar();
+    await cargar();
+  });
+</script>
+</body>
+</html>

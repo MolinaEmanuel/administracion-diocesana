@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Estadísticas</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <style>
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .chart-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(28,46,74,0.1);
+    }
+    .chart-card.full { grid-column: 1 / -1; }
+    .chart-card h3 {
+      font-family: 'Lora', serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+    .chart-card .chart-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .chart-wrap { position: relative; height: 220px; }
+    .chart-wrap.tall { height: 280px; }
+    .export-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .export-bar .label {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    .report-table th {
+      padding: 9px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      background: #EDE8DC;
+      border-bottom: 1px solid var(--border);
+    }
+    .report-table td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .report-table tr:last-child td { border-bottom: none; }
+    .report-table tbody tr {
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+    .report-table tbody tr:hover {
+      background: #EDE8DC;
+      transform: translateX(2px);
+    }
+    .section-title {
+      font-family: 'Lora', serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--primary);
+      margin: 28px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title i { font-size: 18px; color: var(--red); }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Estadísticas</h1>
+        <p>Reportes y análisis de movimientos</p>
+      </div>
+      <div class="topbar-actions">
+        <select class="filter-select" id="filtroAño" style="font-weight:500"></select>
+        <select class="filter-select" id="filtroLumisial"><option value="">Todos los lumisiales</option></select>
+      </div>
+    </div>
+    <div class="page-content">
+
+      <!-- Métricas resumen -->
+      <div class="metrics-grid" id="metricsResumen">
+        <div class="metric-card blue"><div class="label">Total recaudado</div><div class="value" id="mTotalMonto">—</div><div class="sub">en el período</div></div>
+        <div class="metric-card blue"><div class="label">Total pagos</div><div class="value" id="mTotalPagos">—</div><div class="sub">registrados</div></div>
+        <div class="metric-card red"><div class="label">Pendientes</div><div class="value" id="mPendientes">—</div><div class="sub">sin cobrar</div></div>
+        <div class="metric-card yellow"><div class="label">Promedio mensual</div><div class="value" id="mPromedio">—</div><div class="sub">por mes</div></div>
+      </div>
+
+      <!-- Gráficos -->
+      <div class="stats-grid">
+        <div class="chart-card full">
+          <h3>Recaudación mensual</h3>
+          <div class="chart-sub">Total de diezmos y donaciones por mes</div>
+          <div class="chart-wrap tall"><canvas id="chartMensual"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Por lumisial</h3>
+          <div class="chart-sub">Distribución de pagos por lumisial</div>
+          <div class="chart-wrap"><canvas id="chartLumisial"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Por concepto</h3>
+          <div class="chart-sub">Diezmos vs donaciones vs otros</div>
+          <div class="chart-wrap"><canvas id="chartConcepto"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Reporte detallado exportable -->
+      <div class="section-title"><i class="ti ti-table-export"></i>Reporte detallado</div>
+      <div class="export-bar">
+        <span class="label">Exportar:</span>
+        <button class="btn btn-secondary btn-sm" id="btnExcelPagos"><i class="ti ti-file-spreadsheet"></i> Pagos en Excel</button>
+        <button class="btn btn-secondary btn-sm" id="btnExcelMiembros"><i class="ti ti-file-spreadsheet"></i> Miembros en Excel</button>
+        <button class="btn btn-secondary btn-sm" id="btnExcelResumen"><i class="ti ti-file-spreadsheet"></i> Resumen mensual</button>
+      </div>
+      <div class="table-card">
+        <table class="report-table" id="tablaReporte">
+          <thead>
+            <tr>
+              <th>Mes</th>
+              <th>Lumisial</th>
+              <th>Pagos</th>
+              <th>Monto total</th>
+              <th>Pendientes</th>
+              <th>Promedio</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyReporte">
+            <tr><td colspan="6"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, query, orderBy, where, Timestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const COLORS = {
+    blue:   '#1C2E4A',
+    red:    '#B44637',
+    yellow: '#D4A847',
+    blue2:  '#3A5A8A',
+    red2:   '#D4695A',
+    yellow2:'#E8C870',
+  };
+
+  let todosLosPagos  = [];
+  let todosMiembros  = [];
+  let charMensual, chartLumisialInst, chartConceptoInst;
+
+  requireAuth(async () => {
+    // Cargar datos
+    const [pagosSnap, miembrosSnap, lumisialesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'pagos'), orderBy('fecha', 'desc'))),
+      getDocs(collection(db, 'miembros')),
+      getDocs(collection(db, 'parroquias')),
+    ]);
+
+    todosLosPagos = pagosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    todosMiembros = miembrosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lumisiales = lumisialesSnap.docs.map(d => d.data().nombre);
+
+    // Poblar filtros
+    const años = [...new Set(todosLosPagos.map(p => p.fecha?.toDate().getFullYear()).filter(Boolean))].sort((a,b) => b-a);
+    if (!años.length) años.push(new Date().getFullYear());
+    const selAño = document.getElementById('filtroAño');
+    años.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      selAño.appendChild(opt);
+    });
+
+    const selLum = document.getElementById('filtroLumisial');
+    lumisiales.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l; opt.textContent = l;
+      selLum.appendChild(opt);
+    });
+
+    renderTodo();
+
+    selAño.addEventListener('change', renderTodo);
+    selLum.addEventListener('change', renderTodo);
+  });
+
+  function filtrarPagos() {
+    const año  = parseInt(document.getElementById('filtroAño').value);
+    const lum  = document.getElementById('filtroLumisial').value;
+    return todosLosPagos.filter(p => {
+      const f = p.fecha?.toDate();
+      if (!f) return false;
+      const matchAño = f.getFullYear() === año;
+      const matchLum = !lum || p.parroquia === lum;
+      return matchAño && matchLum;
+    });
+  }
+
+  function renderTodo() {
+    const pagos = filtrarPagos();
+    renderMetrics(pagos);
+    renderChartMensual(pagos);
+    renderChartLumisial(pagos);
+    renderChartConcepto(pagos);
+    renderTablaReporte(pagos);
+  }
+
+  function renderMetrics(pagos) {
+    const pagados   = pagos.filter(p => p.estado === 'pagado');
+    const pendientes= pagos.filter(p => p.estado !== 'pagado');
+    const total     = pagados.reduce((s, p) => s + (p.monto || 0), 0);
+    const mesesConPagos = new Set(pagados.map(p => {
+      const f = p.fecha?.toDate();
+      return f ? `${f.getFullYear()}-${f.getMonth()}` : null;
+    }).filter(Boolean)).size || 1;
+
+    document.getElementById('mTotalMonto').textContent  = '$' + total.toLocaleString('es-AR');
+    document.getElementById('mTotalPagos').textContent  = pagados.length;
+    document.getElementById('mPendientes').textContent  = pendientes.length;
+    document.getElementById('mPromedio').textContent    = '$' + Math.round(total / mesesConPagos).toLocaleString('es-AR');
+  }
+
+  function renderChartMensual(pagos) {
+    const porMes = Array(12).fill(0);
+    pagos.filter(p => p.estado === 'pagado').forEach(p => {
+      const m = p.fecha?.toDate().getMonth();
+      if (m !== undefined) porMes[m] += p.monto || 0;
+    });
+
+    if (charMensual) charMensual.destroy();
+    charMensual = new Chart(document.getElementById('chartMensual'), {
+      type: 'bar',
+      data: {
+        labels: MESES,
+        datasets: [{
+          label: 'Recaudado ($)',
+          data: porMes,
+          backgroundColor: porMes.map((_, i) => {
+            if (i % 3 === 0) return COLORS.blue + 'CC';
+            if (i % 3 === 1) return COLORS.red + 'CC';
+            return COLORS.yellow + 'CC';
+          }),
+          borderColor: porMes.map((_, i) => {
+            if (i % 3 === 0) return COLORS.blue;
+            if (i % 3 === 1) return COLORS.red;
+            return COLORS.yellow;
+          }),
+          borderWidth: 1,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString('es-AR') } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function renderChartLumisial(pagos) {
+    const lumMap = {};
+    pagos.filter(p => p.estado === 'pagado').forEach(p => {
+      const l = p.parroquia || 'Sin lumisial';
+      lumMap[l] = (lumMap[l] || 0) + (p.monto || 0);
+    });
+    const labels = Object.keys(lumMap);
+    const values = Object.values(lumMap);
+
+    if (chartLumisialInst) chartLumisialInst.destroy();
+    chartLumisialInst = new Chart(document.getElementById('chartLumisial'), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: [COLORS.blue + 'CC', COLORS.red + 'CC', COLORS.yellow + 'CC', COLORS.blue2 + 'CC'],
+          borderColor: [COLORS.blue, COLORS.red, COLORS.yellow, COLORS.blue2],
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } }
+        }
+      }
+    });
+  }
+
+  function renderChartConcepto(pagos) {
+    const concMap = {};
+    pagos.filter(p => p.estado === 'pagado').forEach(p => {
+      const c = p.concepto || 'Diezmo';
+      concMap[c] = (concMap[c] || 0) + (p.monto || 0);
+    });
+    const labels = Object.keys(concMap);
+    const values = Object.values(concMap);
+
+    if (chartConceptoInst) chartConceptoInst.destroy();
+    chartConceptoInst = new Chart(document.getElementById('chartConcepto'), {
+      type: 'pie',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: [COLORS.blue + 'CC', COLORS.yellow + 'CC', COLORS.red + 'CC', COLORS.blue2 + 'CC'],
+          borderColor: '#fff',
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } }
+        }
+      }
+    });
+  }
+
+  function renderTablaReporte(pagos) {
+    // Agrupar por mes + lumisial
+    const grupos = {};
+    pagos.forEach(p => {
+      const f = p.fecha?.toDate();
+      if (!f) return;
+      const key = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}|${p.parroquia || '—'}`;
+      if (!grupos[key]) grupos[key] = { mes: f, lumisial: p.parroquia || '—', pagos: 0, monto: 0, pendientes: 0 };
+      if (p.estado === 'pagado') { grupos[key].pagos++; grupos[key].monto += p.monto || 0; }
+      else grupos[key].pendientes++;
+    });
+
+    const filas = Object.values(grupos).sort((a, b) => b.mes - a.mes);
+    const tbody = document.getElementById('tbodyReporte');
+
+    if (!filas.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="ti ti-chart-off"></i><p>Sin datos para este período.</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filas.map(g => {
+      const mesStr = `${MESES_FULL[g.mes.getMonth()]} ${g.mes.getFullYear()}`;
+      const prom   = g.pagos ? Math.round(g.monto / g.pagos) : 0;
+      return `<tr>
+        <td class="fw-500">${mesStr}</td>
+        <td><span class="badge badge-info">${g.lumisial}</span></td>
+        <td>${g.pagos}</td>
+        <td class="fw-500">$${g.monto.toLocaleString('es-AR')}</td>
+        <td>${g.pendientes > 0 ? `<span class="badge badge-warning">${g.pendientes}</span>` : '<span class="badge badge-success">0</span>'}</td>
+        <td>$${prom.toLocaleString('es-AR')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Exportar Excel ────────────────────────────────────────────
+
+  document.getElementById('btnExcelPagos').addEventListener('click', () => {
+    const pagos = filtrarPagos();
+    const año   = document.getElementById('filtroAño').value;
+    const rows  = pagos.map(p => ({
+      'Miembro':    p.miembroNombre || '—',
+      'Lumisial':   p.parroquia || '—',
+      'Concepto':   p.concepto || 'Diezmo',
+      'Monto ($)':  p.monto || 0,
+      'Fecha':      p.fecha?.toDate().toLocaleDateString('es-AR') || '—',
+      'Período':    p.periodo || '—',
+      'Estado':     p.estado || '—',
+      'Observaciones': p.observaciones || '',
+    }));
+    exportarExcel(rows, `Pagos_${año}`, `pagos_${año}.xlsx`);
+  });
+
+  document.getElementById('btnExcelMiembros').addEventListener('click', () => {
+    const rows = todosMiembros.map(m => ({
+      'Apellido':   m.apellido || '—',
+      'Nombre':     m.nombre || '—',
+      'DNI':        m.dni || '—',
+      'Lumisial':   m.parroquia || '—',
+      'Teléfono':   m.telefono || '—',
+      'Correo':     m.correo || '—',
+      'Estado':     m.estado || '—',
+      'Dirección':  m.direccion || '—',
+    }));
+    exportarExcel(rows, 'Miembros', 'miembros.xlsx');
+  });
+
+  document.getElementById('btnExcelResumen').addEventListener('click', () => {
+    const pagos = filtrarPagos();
+    const año   = document.getElementById('filtroAño').value;
+    const grupos = {};
+    pagos.forEach(p => {
+      const f = p.fecha?.toDate();
+      if (!f) return;
+      const key = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}`;
+      if (!grupos[key]) grupos[key] = { mes: MESES_FULL[f.getMonth()] + ' ' + f.getFullYear(), pagos: 0, monto: 0, pendientes: 0 };
+      if (p.estado === 'pagado') { grupos[key].pagos++; grupos[key].monto += p.monto || 0; }
+      else grupos[key].pendientes++;
+    });
+    const rows = Object.values(grupos).map(g => ({
+      'Mes':              g.mes,
+      'Pagos cobrados':   g.pagos,
+      'Monto total ($)':  g.monto,
+      'Pendientes':       g.pendientes,
+      'Promedio ($)':     g.pagos ? Math.round(g.monto / g.pagos) : 0,
+    }));
+    exportarExcel(rows, `Resumen_${año}`, `resumen_mensual_${año}.xlsx`);
+  });
+
+  function exportarExcel(rows, sheetName, filename) {
+    if (!rows.length) { alert('No hay datos para exportar.'); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+
+    // Ancho automático de columnas
+    const colWidths = Object.keys(rows[0]).map(k => ({
+      wch: Math.max(k.length, ...rows.map(r => String(r[k] || '').length)) + 2
+    }));
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filename);
+  }
+</script>
+</body>
+</html>

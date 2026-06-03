@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Miembros</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Miembros</h1>
+        <p>Registro de miembros de la diócesis</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="btnNuevo"><i class="ti ti-plus"></i> Nuevo miembro</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="filter-bar">
+        <div class="search-input">
+          <i class="ti ti-search"></i>
+          <input type="text" id="buscar" placeholder="Buscar por nombre o apellido..."/>
+        </div>
+        <select class="filter-select" id="filtroParroquia">
+          <option value="">Todos los lumisiales</option>
+        </select>
+        <select class="filter-select" id="filtroEstado">
+          <option value="">Todos los estados</option>
+          <option value="activo">Activo</option>
+          <option value="inactivo">Inactivo</option>
+        </select>
+      </div>
+
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+<th>Nombre y apellido</th>
+              <th>Lumisial</th>
+              <th>Teléfono</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tablaMiembros">
+            <tr><td colspan="6"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Miembro -->
+<div class="modal-overlay" id="modalMiembro">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="tricolor-bar"></div>
+      <div class="modal-header-inner">
+        <h2 id="modalTitulo">Nuevo miembro</h2>
+        <button class="btn btn-icon" id="btnCerrarModal"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="alertModal" class="alert alert-danger"></div>
+      <input type="hidden" id="miembroId"/>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" id="nombre" placeholder="Ej: María"/>
+        </div>
+        <div class="form-group">
+          <label>Apellido *</label>
+          <input type="text" id="apellido" placeholder="Ej: García"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>DNI</label>
+          <input type="text" id="dni" placeholder="Ej: 30123456"/>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="telefono" placeholder="Ej: 2901-123456"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Correo electrónico</label>
+        <input type="email" id="correo" placeholder="ejemplo@correo.com"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Lumisial *</label>
+          <select id="parroquia">
+            <option value="">Seleccioná un lumisial</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select id="estado">
+            <option value="activo">Activo</option>
+            <option value="inactivo">Inactivo</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input type="text" id="direccion" placeholder="Calle, número, ciudad"/>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="notas" rows="2" placeholder="Observaciones opcionales..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar"><i class="ti ti-device-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, addDoc, updateDoc, deleteDoc,
+    doc, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  let miembros = [];
+  let parroquias = [];
+
+  requireAuth(async () => {
+    await cargarLumisiales();
+    await cargarMiembros();
+    setupFiltros();
+  });
+
+  async function cargarLumisiales() {
+    const snap = await getDocs(collection(db, 'parroquias'));
+    parroquias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const selects = [document.getElementById('filtroParroquia'), document.getElementById('parroquia')];
+    parroquias.forEach(p => {
+      selects.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = p.nombre;
+        opt.textContent = p.nombre;
+        s.appendChild(opt);
+      });
+    });
+  }
+
+  async function cargarMiembros() {
+    const snap = await getDocs(query(collection(db, 'miembros'), orderBy('apellido')));
+    miembros = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderTabla(miembros);
+  }
+
+  function renderTabla(lista) {
+    const tbody = document.getElementById('tablaMiembros');
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><i class="ti ti-users-off"></i><p>No se encontraron miembros.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lista.map((m, i) => `
+      <tr>
+<td><span class="fw-500">${m.apellido}, ${m.nombre}</span><br><span class="text-muted text-small">${m.dni || '—'}</span></td>
+        <td><span class="badge badge-info">${m.parroquia || '—'}</span></td>
+        <td class="text-small">${m.telefono || '—'}</td>
+        <td>${m.estado === 'activo'
+          ? '<span class="badge badge-success">Activo</span>'
+          : '<span class="badge badge-warning">Inactivo</span>'}</td>
+        <td>
+          <div class="d-flex gap-1">
+            <button class="btn btn-icon" onclick="editarMiembro('${m.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+            <a href="pagos.html?miembro=${m.id}&nombre=${encodeURIComponent(m.apellido+', '+m.nombre)}" class="btn btn-icon" title="Ver pagos"><i class="ti ti-receipt"></i></a>
+            <button class="btn btn-icon btn-danger" onclick="eliminarMiembro('${m.id}')" title="Eliminar"><i class="ti ti-trash"></i></button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  function setupFiltros() {
+    const filtrar = () => {
+      const texto  = document.getElementById('buscar').value.toLowerCase();
+      const parr   = document.getElementById('filtroParroquia').value;
+      const estado = document.getElementById('filtroEstado').value;
+      renderTabla(miembros.filter(m => {
+        const nombre = `${m.nombre} ${m.apellido}`.toLowerCase();
+        return (!texto  || nombre.includes(texto))
+          &&   (!parr   || m.parroquia === parr)
+          &&   (!estado || m.estado === estado);
+      }));
+    };
+    ['buscar','filtroParroquia','filtroEstado'].forEach(id =>
+      document.getElementById(id).addEventListener('input', filtrar));
+  }
+
+  // Modal
+  const modal      = document.getElementById('modalMiembro');
+  const alertModal = document.getElementById('alertModal');
+
+  function abrirModal() {
+    alertModal.classList.remove('show');
+    modal.classList.add('open');
+  }
+  function cerrarModal() { modal.classList.remove('open'); }
+
+  document.getElementById('btnNuevo').addEventListener('click', () => {
+    document.getElementById('modalTitulo').textContent = 'Nuevo miembro';
+    document.getElementById('miembroId').value = '';
+    ['nombre','apellido','dni','telefono','correo','direccion','notas'].forEach(id =>
+      document.getElementById(id).value = '');
+    document.getElementById('parroquia').value = '';
+    document.getElementById('estado').value = 'activo';
+    abrirModal();
+  });
+
+  document.getElementById('btnCerrarModal').addEventListener('click', cerrarModal);
+  document.getElementById('btnCancelar').addEventListener('click', cerrarModal);
+
+  window.editarMiembro = (id) => {
+    const m = miembros.find(x => x.id === id);
+    if (!m) return;
+    document.getElementById('modalTitulo').textContent = 'Editar miembro';
+    document.getElementById('miembroId').value  = m.id;
+    document.getElementById('nombre').value     = m.nombre || '';
+    document.getElementById('apellido').value   = m.apellido || '';
+    document.getElementById('dni').value        = m.dni || '';
+    document.getElementById('telefono').value   = m.telefono || '';
+    document.getElementById('correo').value     = m.correo || '';
+    document.getElementById('parroquia').value  = m.parroquia || '';
+    document.getElementById('estado').value     = m.estado || 'activo';
+    document.getElementById('direccion').value  = m.direccion || '';
+    document.getElementById('notas').value      = m.notas || '';
+    abrirModal();
+  };
+
+  window.eliminarMiembro = async (id) => {
+    if (!confirm('¿Eliminar este miembro? Esta acción no se puede deshacer.')) return;
+    await deleteDoc(doc(db, 'miembros', id));
+    await cargarMiembros();
+  };
+
+  document.getElementById('btnGuardar').addEventListener('click', async () => {
+    const nombre    = document.getElementById('nombre').value.trim();
+    const apellido  = document.getElementById('apellido').value.trim();
+    const parroquia = document.getElementById('parroquia').value;
+    alertModal.classList.remove('show');
+
+    if (!nombre || !apellido || !parroquia) {
+      alertModal.textContent = 'Nombre, apellido y lumisial son obligatorios.';
+      alertModal.classList.add('show');
+      return;
+    }
+
+    const datos = {
+      nombre, apellido, parroquia,
+      dni:       document.getElementById('dni').value.trim(),
+      telefono:  document.getElementById('telefono').value.trim(),
+      correo:    document.getElementById('correo').value.trim(),
+      estado:    document.getElementById('estado').value,
+      direccion: document.getElementById('direccion').value.trim(),
+      notas:     document.getElementById('notas').value.trim(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const id = document.getElementById('miembroId').value;
+    if (id) {
+      await updateDoc(doc(db, 'miembros', id), datos);
+    } else {
+      datos.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'miembros'), datos);
+    }
+
+    cerrarModal();
+    await cargarMiembros();
+  });
+</script>
+</body>
+</html>
