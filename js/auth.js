@@ -20,6 +20,7 @@ function renderSidebar(user) {
 
   const nav = [
     { href: 'dashboard.html',   icon: 'ti-layout-dashboard', label: 'Inicio' },
+    { href: 'estadisticas.html', icon: 'ti-chart-bar',        label: 'Estadísticas' },
     { href: 'miembros.html',    icon: 'ti-users',            label: 'Miembros' },
     { href: 'pagos.html',       icon: 'ti-receipt',          label: 'Pagos' },
     { href: 'comprobante.html', icon: 'ti-file-text',        label: 'Comprobantes' },
