@@ -30,7 +30,7 @@
     .monto-grande { text-align: center; padding: 20px; background: var(--primary-pale); border-radius: var(--radius); margin: 24px 0; }
     .monto-grande .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 4px; }
     .monto-grande .valor { font-family: 'Lora', serif; font-size: 36px; font-weight: 600; color: var(--primary); }
-    .firmantes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+    .firmantes { display: flex; justify-content: center; margin-top: 40px; min-width: 200px; }
     .firmante { text-align: center; }
     .firmante .linea { border-top: 1px solid var(--text); padding-top: 6px; margin-top: 32px; }
     .firmante .nombre { font-size: 13px; font-weight: 500; color: var(--text); }
@@ -71,13 +71,13 @@
 </div>
 
 <script type="module">
-  import { requireAuth } from './js/auth.js';
+  import { requireAuth, getFirmanteByEmail } from './js/auth.js';
   import { db } from './js/firebase-config.js';
   import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   let datosPago = null;
 
-  requireAuth(async () => {
+  requireAuth(async (user, firmanteParam) => {
     const params = new URLSearchParams(window.location.search);
     const pagoId = params.get('pago');
     if (!pagoId) {
@@ -85,9 +85,8 @@
       return;
     }
 
-    const [pagoSnap, firmantesSnap, configSnap] = await Promise.all([
+    const [pagoSnap, configSnap] = await Promise.all([
       getDoc(doc(db, 'pagos', pagoId)),
-      getDocs(collection(db, 'firmantes')),
       getDoc(doc(db, 'config', 'diocesis')),
     ]);
 
@@ -97,28 +96,36 @@
     }
 
     datosPago = { id: pagoSnap.id, ...pagoSnap.data() };
-    const firmantes = firmantesSnap.docs.map(d => d.data()).slice(0, 3);
-    const config    = configSnap.exists() ? configSnap.data() : {};
+    // Usar firmante del requireAuth, o buscarlo si no vino
+    const firmanteActual = firmanteParam || await getFirmanteByEmail(user.email);
+    const config = configSnap.exists() ? configSnap.data() : {};
 
     document.getElementById('subtitulo').textContent = `${datosPago.miembroNombre} — ${datosPago.fecha?.toDate().toLocaleDateString('es-AR')}`;
 
-    const fecha   = datosPago.fecha?.toDate();
+    const fecha    = datosPago.fecha?.toDate();
     const fechaStr = fecha ? fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
-    const nroComp = datosPago.id.substring(0, 8).toUpperCase();
-
-    // Monto en palabras (básico)
+    const nroComp  = datosPago.id.substring(0, 8).toUpperCase();
     const montoStr = `$${(datosPago.monto || 0).toLocaleString('es-AR')}`;
 
-    const firmantesHTML = firmantes.length
-      ? firmantes.map(f => `
-          <div class="firmante">
-            ${f.firma ? `<div style="height:50px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px"><img src="${f.firma}" alt="Firma" style="max-height:48px;max-width:140px;object-fit:contain"/></div>` : '<div style="height:54px"></div>'}
+    const firmantesHTML = firmanteActual
+      ? `<div class="firmante">
+            ${firmanteActual.firma
+              ? `<div style="height:50px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px">
+                   <img src="${firmanteActual.firma}" alt="Firma" style="max-height:48px;max-width:140px;object-fit:contain"/>
+                 </div>`
+              : '<div style="height:54px"></div>'}
             <div class="linea">
-              <div class="nombre">${f.nombre}</div>
-              <div class="cargo">${f.cargo}</div>
+              <div class="nombre">${firmanteActual.nombre}</div>
+              <div class="cargo">${firmanteActual.cargo}</div>
             </div>
-          </div>`).join('')
-      : `<div class="firmante"><div class="linea"><div class="nombre">_______________</div><div class="cargo">Firmante</div></div></div>`.repeat(3);
+          </div>`
+      : `<div class="firmante">
+           <div style="height:54px"></div>
+           <div class="linea">
+             <div class="nombre">_______________</div>
+             <div class="cargo">Firmante autorizado</div>
+           </div>
+         </div>`;
 
     document.getElementById('recibo').innerHTML = `
       <div class="recibo-header">

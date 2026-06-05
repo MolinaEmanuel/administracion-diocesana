@@ -94,7 +94,7 @@
 </div>
 
 <script type="module">
-  import { requireAuth } from './js/auth.js';
+  import { requireAuth, isAdmin } from './js/auth.js';
   import { db } from './js/firebase-config.js';
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -103,7 +103,8 @@
 
   let parroquias = [];
 
-  requireAuth(async () => { await cargar(); });
+  requireAuth(async (user) => {
+    if (!isAdmin(user.email)) { window.location.href = 'dashboard.html'; return; } await cargar(); });
 
   async function cargar() {
     const snap = await getDocs(query(collection(db, 'parroquias'), orderBy('nombre')));

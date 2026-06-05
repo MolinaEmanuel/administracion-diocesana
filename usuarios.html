@@ -111,7 +111,7 @@
 </div>
 
 <script type="module">
-  import { requireAuth } from './js/auth.js';
+  import { requireAuth, isAdmin } from './js/auth.js';
   import { db } from './js/firebase-config.js';
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -121,7 +121,8 @@
   let usuarios   = [];
   let parroquias = [];
 
-  requireAuth(async () => {
+  requireAuth(async (user) => {
+    if (!isAdmin(user.email)) { window.location.href = 'dashboard.html'; return; }
     await cargarLumisiales();
     await cargar();
   });

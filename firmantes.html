@@ -109,6 +109,10 @@
         <input type="text" id="cargo" placeholder="Ej: Rector / Tesorero / Secretario"/>
       </div>
       <div class="form-group">
+        <label>Correo electrónico (para vincular al usuario) *</label>
+        <input type="email" id="correoFirmante" placeholder="correo@ejemplo.com"/>
+      </div>
+      <div class="form-group">
         <label>Notas</label>
         <textarea id="notas" rows="2" placeholder="Observaciones opcionales..."></textarea>
       </div>
@@ -127,7 +131,7 @@
 </div>
 
 <script type="module">
-  import { requireAuth } from './js/auth.js';
+  import { requireAuth, isAdmin } from './js/auth.js';
   import { db } from './js/firebase-config.js';
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -136,7 +140,8 @@
 
   let firmantes = [];
 
-  requireAuth(async () => { await cargar(); });
+  requireAuth(async (user) => {
+    if (!isAdmin(user.email)) { window.location.href = 'dashboard.html'; return; } await cargar(); });
 
   async function cargar() {
     const snap = await getDocs(query(collection(db, 'firmantes'), orderBy('slot')));
@@ -158,6 +163,7 @@
           <div class="firmante-avatar">${initials}</div>
           <div class="firmante-nombre">${f.nombre}</div>
           <div class="firmante-cargo">${f.cargo}</div>
+          ${f.correo ? `<div style="font-size:10px;color:var(--text-light);margin-top:2px">${f.correo}</div>` : ''}
           <div class="firma-linea"></div>
           <div class="firmante-firma">${f.firma ? `<img src="${f.firma}" alt="Firma de ${f.nombre}"/>` : '<span style="font-size:11px;color:var(--text-light)">Sin firma</span>'}</div>
           <div class="d-flex gap-1 mt-1">
@@ -183,11 +189,15 @@
 
   window.agregar = (slot) => {
     document.getElementById('modalTitulo').textContent = `Asignar firmante ${slot}`;
-    document.getElementById('firmanteId').value   = '';
-    document.getElementById('firmanteSlot').value = slot;
-    document.getElementById('nombre').value = '';
-    document.getElementById('cargo').value  = '';
-    document.getElementById('notas').value  = '';
+    document.getElementById('firmanteId').value    = '';
+    document.getElementById('firmanteSlot').value  = slot;
+    document.getElementById('nombre').value        = '';
+    document.getElementById('cargo').value         = '';
+    document.getElementById('correoFirmante').value = '';
+    document.getElementById('notas').value         = '';
+    document.getElementById('firmaBase64').value   = '';
+    document.getElementById('firmaArchivo').value  = '';
+    document.getElementById('firmaPreview').innerHTML = '<span class="placeholder">Sin firma cargada</span>';
     abrir();
   };
 
@@ -199,7 +209,8 @@
     document.getElementById('firmanteSlot').value = f.slot;
     document.getElementById('nombre').value = f.nombre || '';
     document.getElementById('cargo').value  = f.cargo  || '';
-    document.getElementById('notas').value  = f.notas  || '';
+    document.getElementById('notas').value          = f.notas  || '';
+    document.getElementById('correoFirmante').value  = f.correo || '';
     document.getElementById('firmaBase64').value = f.firma || '';
     document.getElementById('firmaArchivo').value = '';
     document.getElementById('firmaPreview').innerHTML = f.firma
@@ -243,6 +254,7 @@
       nombre, cargo,
       slot:      parseInt(document.getElementById('firmanteSlot').value),
       notas:     document.getElementById('notas').value.trim(),
+      correo:    document.getElementById('correoFirmante').value.trim().toLowerCase(),
       firma:     document.getElementById('firmaBase64').value || '',
       updatedAt: serverTimestamp(),
     };
