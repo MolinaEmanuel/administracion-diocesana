@@ -100,6 +100,10 @@
     const firmanteActual = firmanteParam || await getFirmanteByEmail(user.email);
     const config = configSnap.exists() ? configSnap.data() : {};
 
+    // Guardar datos del firmante para el PDF
+    window._firmanteActualNombre = firmanteActual?.nombre || '';
+    window._firmanteActualCargo  = firmanteActual?.cargo  || '';
+
     document.getElementById('subtitulo').textContent = `${datosPago.miembroNombre} — ${datosPago.fecha?.toDate().toLocaleDateString('es-AR')}`;
 
     const fecha    = datosPago.fecha?.toDate();
@@ -164,95 +168,221 @@
       <div class="recibo-footer">
         Este comprobante acredita la recepción de la donación o diezmo indicado.<br>
         ${config.nombre || 'Diócesis'} — Organización sin fines de lucro.
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);font-style:italic;color:var(--text-muted);font-size:11px;line-height:1.6">
+          "La caridad no es una simple limosna, sino una expresión viva del Cristo interior,<br>
+          y el pilar fundamental del sacrificio por la humanidad."<br>
+          <span style="font-style:normal;font-weight:500;font-size:10px;color:var(--text-light);display:block;margin-top:4px">— Samael Aun Weor</span>
+        </div>
       </div>`;
   });
 
   // PDF generation
-  document.getElementById('btnPDF').addEventListener('click', () => {
+  document.getElementById('btnPDF').addEventListener('click', async () => {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
 
     if (!datosPago) return;
 
-    const p = datosPago;
-    const fecha = p.fecha?.toDate().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }) || '—';
-    const nro   = p.id.substring(0, 8).toUpperCase();
-    const monto = `$${(p.monto || 0).toLocaleString('es-AR')}`;
+    const p      = datosPago;
+    const fecha  = p.fecha?.toDate().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }) || '—';
+    const nro    = p.id.substring(0, 8).toUpperCase();
+    const monto  = `$${(p.monto || 0).toLocaleString('es-AR')}`;
 
-    // Header
-    pdf.setFillColor(59, 47, 107);
-    pdf.rect(0, 0, 210, 28, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Comprobante de Pago', 20, 12);
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(`N° ${nro}`, 20, 20);
-    pdf.text(fecha, 170, 20, { align: 'right' });
+    // ── Colores institucionales ──────────────────────────────
+    const AZUL    = [28, 46, 74];
+    const ROJO    = [180, 70, 55];
+    const AMARILLO= [212, 168, 71];
+    const CREMA   = [245, 240, 232];
+    const GRIS    = [130, 128, 112];
 
-    // Body
-    pdf.setTextColor(30, 30, 50);
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Datos del contribuyente', 20, 42);
-    pdf.setDrawColor(200, 200, 220);
-    pdf.line(20, 44, 190, 44);
+    // ── Barra tricolor superior ──────────────────────────────
+    pdf.setFillColor(...AZUL);
+    pdf.rect(0, 0, 70, 8, 'F');
+    pdf.setFillColor(...ROJO);
+    pdf.rect(70, 0, 70, 8, 'F');
+    pdf.setFillColor(...AMARILLO);
+    pdf.rect(140, 0, 70, 8, 'F');
 
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(10);
-    pdf.text('Nombre:', 20, 52);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(p.miembroNombre || '—', 70, 52);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Lumisial:', 20, 60);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(p.parroquia || '—', 70, 60);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Período:', 20, 68);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(p.periodo || '—', 70, 68);
+    // ── Header: logo + título ────────────────────────────────
+    pdf.setFillColor(...CREMA);
+    pdf.rect(0, 8, 210, 30, 'F');
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.text('Detalle del pago', 20, 84);
-    pdf.line(20, 86, 190, 86);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(10);
-    pdf.text('Concepto:', 20, 94);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(p.concepto || 'Diezmo', 70, 94);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Estado:', 20, 102);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(p.estado === 'pagado' ? 'Pagado' : 'Pendiente', 70, 102);
+    // Logo
+    try {
+      const logoUrl  = window.location.href.replace(/[^/]*$/, '') + 'assets/logo-gnosis.png';
+      const response = await fetch(logoUrl);
+      const blob     = await response.blob();
+      const b64      = await new Promise(res => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.readAsDataURL(blob);
+      });
+      pdf.addImage(b64, 'PNG', 8, 10, 22, 22);
+    } catch(e) {}
 
-    // Monto box
-    pdf.setFillColor(238, 237, 254);
-    pdf.roundedRect(20, 116, 170, 24, 4, 4, 'F');
-    pdf.setTextColor(59, 47, 107);
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('TOTAL RECIBIDO', 105, 124, { align: 'center' });
-    pdf.setFontSize(20);
+    pdf.setTextColor(...AZUL);
+    pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(monto, 105, 134, { align: 'center' });
-
-    // Firma lines
-    pdf.setTextColor(30, 30, 50);
+    pdf.text('Comprobante de Pago', 34, 19);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    const firmaY = 185;
-    [40, 105, 170].forEach(x => {
-      pdf.setDrawColor(100, 100, 120);
-      pdf.line(x - 20, firmaY, x + 20, firmaY);
-      pdf.text('Firmante', x, firmaY + 5, { align: 'center' });
+    pdf.setTextColor(...GRIS);
+    pdf.text('Administración Diocesana TDF y Sur de Santa Cruz', 34, 25);
+
+    // N° y fecha alineados a la derecha
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...AZUL);
+    pdf.text(`N° ${nro}`, 200, 17, { align: 'right' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(...GRIS);
+    pdf.text(fecha, 200, 23, { align: 'right' });
+
+    // ── Línea separadora ─────────────────────────────────────
+    pdf.setDrawColor(...AZUL);
+    pdf.setLineWidth(0.4);
+    pdf.line(10, 40, 200, 40);
+
+    // ── Sección datos del contribuyente ──────────────────────
+    let y = 48;
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...ROJO);
+    pdf.text('DATOS DEL CONTRIBUYENTE', 10, y);
+    pdf.setDrawColor(220, 215, 205);
+    pdf.setLineWidth(0.2);
+    pdf.line(10, y + 2, 200, y + 2);
+
+    y += 9;
+    const campos = [
+      ['Nombre y apellido', p.miembroNombre || '—'],
+      ['Lumisial',          p.parroquia     || '—'],
+      ['Período',           p.periodo       || '—'],
+    ];
+    campos.forEach(([key, val]) => {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...GRIS);
+      pdf.setFontSize(9);
+      pdf.text(key, 10, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...AZUL);
+      pdf.text(val, 65, y);
+      y += 8;
     });
 
-    // Footer
+    // ── Sección detalle del pago ─────────────────────────────
+    y += 4;
     pdf.setFontSize(8);
-    pdf.setTextColor(150, 150, 170);
-    pdf.text('Organización sin fines de lucro. Este comprobante acredita la recepción de la donación o diezmo indicado.', 105, 280, { align: 'center' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...ROJO);
+    pdf.text('DETALLE DEL PAGO', 10, y);
+    pdf.setDrawColor(220, 215, 205);
+    pdf.setLineWidth(0.2);
+    pdf.line(10, y + 2, 200, y + 2);
+
+    y += 9;
+    const detalle = [
+      ['Concepto', p.concepto || 'Diezmo'],
+      ['Estado',   p.estado === 'pagado' ? 'Pagado' : 'Pendiente'],
+    ];
+    if (p.observaciones) detalle.push(['Observaciones', p.observaciones]);
+    detalle.forEach(([key, val]) => {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...GRIS);
+      pdf.setFontSize(9);
+      pdf.text(key, 10, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...AZUL);
+      pdf.text(val, 65, y);
+      y += 8;
+    });
+
+    // ── Caja monto ───────────────────────────────────────────
+    y += 6;
+    pdf.setFillColor(...CREMA);
+    pdf.setDrawColor(...AMARILLO);
+    pdf.setLineWidth(0.6);
+    pdf.roundedRect(10, y, 190, 22, 3, 3, 'FD');
+    pdf.setTextColor(...GRIS);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('TOTAL RECIBIDO', 105, y + 7, { align: 'center' });
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...AZUL);
+    pdf.text(monto, 105, y + 17, { align: 'center' });
+
+    // ── Firma ────────────────────────────────────────────────
+    y += 34;
+    const firmaX = 105; // centrada (un solo firmante)
+
+    // Intentar cargar imagen de firma del firmante actual
+    let firmaLoaded = false;
+    try {
+      const firmaEl = document.querySelector('.firmantes img');
+      if (firmaEl) {
+        const canvas  = document.createElement('canvas');
+        canvas.width  = firmaEl.naturalWidth;
+        canvas.height = firmaEl.naturalHeight;
+        canvas.getContext('2d').drawImage(firmaEl, 0, 0);
+        const firmaB64 = canvas.toDataURL('image/png');
+        const fW = 50, fH = fW * (firmaEl.naturalHeight / firmaEl.naturalWidth);
+        pdf.addImage(firmaB64, 'PNG', firmaX - fW/2, y, fW, fH);
+        y += fH + 2;
+        firmaLoaded = true;
+      }
+    } catch(e) {}
+    if (!firmaLoaded) y += 16;
+
+    // Línea y nombre del firmante
+    pdf.setDrawColor(...AZUL);
+    pdf.setLineWidth(0.3);
+    pdf.line(firmaX - 30, y, firmaX + 30, y);
+    if (window._firmanteActualNombre) {
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...AZUL);
+      pdf.text(window._firmanteActualNombre, firmaX, y + 5, { align: 'center' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(...GRIS);
+      pdf.text(window._firmanteActualCargo || '', firmaX, y + 10, { align: 'center' });
+      y += 14;
+    } else {
+      y += 8;
+    }
+
+    // ── Footer ───────────────────────────────────────────────
+    y += 10;
+    pdf.setDrawColor(220, 215, 205);
+    pdf.setLineWidth(0.2);
+    pdf.line(10, y, 200, y);
+    y += 6;
+
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...GRIS);
+    pdf.text('Este comprobante acredita la recepción de la donación o diezmo indicado.', 105, y, { align: 'center' });
+    y += 5;
+    pdf.text('Organización sin fines de lucro.', 105, y, { align: 'center' });
+
+    // Cita
+    y += 10;
+    pdf.setDrawColor(220, 215, 205);
+    pdf.setLineWidth(0.1);
+    pdf.line(40, y, 170, y);
+    y += 6;
+    pdf.setFontSize(7.5);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...GRIS);
+    const cita = '"La caridad no es una simple limosna, sino una expresión viva del Cristo interior,';
+    const cita2 = 'y el pilar fundamental del sacrificio por la humanidad."';
+    pdf.text(cita,  105, y,     { align: 'center' });
+    pdf.text(cita2, 105, y + 5, { align: 'center' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7);
+    pdf.text('— Samael Aun Weor', 105, y + 11, { align: 'center' });
 
     pdf.save(`comprobante-${nro}.pdf`);
   });

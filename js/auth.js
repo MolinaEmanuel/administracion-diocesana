@@ -93,7 +93,7 @@ function renderSidebar(user, firmante) {
   document.getElementById('sidebar').innerHTML = `
     <div class="sidebar-logo">
       <img src="assets/images/logo-gnosis.png" alt="Logo" style="width:80px;height:80px;object-fit:contain;margin-bottom:10px;display:block"/>
-      <h2>Administración Diocesana TDF y Sur Santa Cruz</h2>
+      <h2>Administración Diocesana TDF y Sur de Santa Cruz</h2>
       <p>Panel de administración</p>
     </div>
     <nav class="sidebar-nav">
