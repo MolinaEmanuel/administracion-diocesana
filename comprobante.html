@@ -72,6 +72,7 @@
 
 <script type="module">
   import { requireAuth, getFirmanteByEmail } from './js/auth.js';
+  import { registrarHistorial } from './js/historial.js';
   import { db } from './js/firebase-config.js';
   import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -103,6 +104,12 @@
     // Guardar datos del firmante para el PDF
     window._firmanteActualNombre = firmanteActual?.nombre || '';
     window._firmanteActualCargo  = firmanteActual?.cargo  || '';
+
+    // Registrar emisión en historial
+    await registrarHistorial('comprobante', 'emision',
+      `Comprobante visualizado: ${datosPago.miembroNombre} — $${datosPago.monto} (${datosPago.periodo})`,
+      { pagoId: datosPago.id, miembro: datosPago.miembroNombre, monto: datosPago.monto, lumisial: datosPago.parroquia }
+    );
 
     document.getElementById('subtitulo').textContent = `${datosPago.miembroNombre} — ${datosPago.fecha?.toDate().toLocaleDateString('es-AR')}`;
 

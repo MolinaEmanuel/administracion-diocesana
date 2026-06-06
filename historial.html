@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Administración Diocesana — Historial</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+    .tipo-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .tipo-miembro   { background: var(--primary-pale); color: var(--primary); }
+    .tipo-pago      { background: var(--success-bg);   color: var(--success); }
+    .tipo-comprobante { background: var(--yellow-pale); color: var(--yellow-dark); }
+    .accion-alta     { background: var(--success-bg);  color: var(--success); }
+    .accion-edicion  { background: var(--primary-pale); color: var(--primary); }
+    .accion-baja     { background: var(--danger-bg);   color: var(--danger); }
+    .accion-emision  { background: var(--yellow-pale); color: var(--yellow-dark); }
+    .log-detalle { font-size: 13px; color: var(--text); font-weight: 500; }
+    .log-meta    { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .empty-btn   { margin-top: 12px; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="tricolor-bar"></div>
+    <div class="topbar">
+      <div class="topbar-title">
+        <h1>Historial</h1>
+        <p>Registro de auditoría — solo visible para administradores</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" id="btnExcel"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
+        <button class="btn btn-danger btn-sm" id="btnLimpiar"><i class="ti ti-trash"></i> Limpiar historial</button>
+      </div>
+    </div>
+    <div class="page-content">
+
+      <!-- Métricas -->
+      <div class="metrics-grid" id="metricsHistorial">
+        <div class="metric-card blue"><div class="label">Total acciones</div><div class="value" id="mTotal">—</div><div class="sub">registradas</div></div>
+        <div class="metric-card blue"><div class="label">Miembros</div><div class="value" id="mMiembros">—</div><div class="sub">altas / ediciones / bajas</div></div>
+        <div class="metric-card red"><div class="label">Pagos</div><div class="value" id="mPagos">—</div><div class="sub">registros / ediciones / bajas</div></div>
+        <div class="metric-card yellow"><div class="label">Comprobantes</div><div class="value" id="mComprobantes">—</div><div class="sub">emitidos</div></div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="filter-bar">
+        <div class="search-input">
+          <i class="ti ti-search"></i>
+          <input type="text" id="buscar" placeholder="Buscar por detalle o usuario..."/>
+        </div>
+        <select class="filter-select" id="filtroTipo">
+          <option value="">Todos los tipos</option>
+          <option value="miembro">Miembros</option>
+          <option value="pago">Pagos</option>
+          <option value="comprobante">Comprobantes</option>
+        </select>
+        <select class="filter-select" id="filtroAccion">
+          <option value="">Todas las acciones</option>
+          <option value="alta">Alta</option>
+          <option value="edicion">Edición</option>
+          <option value="baja">Baja</option>
+          <option value="emision">Emisión</option>
+        </select>
+        <select class="filter-select" id="filtroUsuario">
+          <option value="">Todos los usuarios</option>
+        </select>
+        <input type="date" class="filter-select" id="filtroDesde" title="Desde"/>
+        <input type="date" class="filter-select" id="filtroHasta" title="Hasta"/>
+      </div>
+
+      <!-- Tabla -->
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Detalle</th>
+              <th>Acción</th>
+              <th>Usuario</th>
+              <th>Fecha y hora</th>
+            </tr>
+          </thead>
+          <tbody id="tablaHistorial">
+            <tr><td colspan="5"><div class="empty-state"><i class="ti ti-loader"></i><p>Cargando...</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { requireAuth, isAdmin } from './js/auth.js';
+  import { db } from './js/firebase-config.js';
+  import {
+    collection, getDocs, deleteDoc, doc,
+    query, orderBy
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // Solo admins
+  requireAuth(async (user) => {
+    if (!isAdmin(user.email)) { window.location.href = 'dashboard.html'; return; }
+    await cargar();
+  });
+
+  let registros = [];
+
+  const TIPO_LABEL  = { miembro: 'Miembro', pago: 'Pago', comprobante: 'Comprobante' };
+  const TIPO_ICON   = { miembro: 'ti-users', pago: 'ti-receipt', comprobante: 'ti-file-text' };
+  const ACCION_LABEL= { alta: 'Alta', edicion: 'Edición', baja: 'Baja', emision: 'Emisión' };
+
+  async function cargar() {
+    const snap = await getDocs(query(collection(db, 'historial'), orderBy('fecha', 'desc')));
+    registros  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Poblar filtro usuarios
+    const usuarios = [...new Set(registros.map(r => r.usuario).filter(Boolean))].sort();
+    const sel = document.getElementById('filtroUsuario');
+    usuarios.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u; opt.textContent = u;
+      sel.appendChild(opt);
+    });
+
+    renderMetrics(registros);
+    renderTabla(registros);
+    setupFiltros();
+  }
+
+  function renderMetrics(lista) {
+    document.getElementById('mTotal').textContent        = lista.length;
+    document.getElementById('mMiembros').textContent     = lista.filter(r => r.tipo === 'miembro').length;
+    document.getElementById('mPagos').textContent        = lista.filter(r => r.tipo === 'pago').length;
+    document.getElementById('mComprobantes').textContent = lista.filter(r => r.tipo === 'comprobante').length;
+  }
+
+  function renderTabla(lista) {
+    const tbody = document.getElementById('tablaHistorial');
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><i class="ti ti-history-off"></i><p>No hay registros en el historial.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lista.map(r => {
+      const fecha = r.fecha?.toDate
+        ? r.fecha.toDate().toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+        : '—';
+      const tipoClass   = `tipo-${r.tipo || 'pago'}`;
+      const accionClass = `accion-${r.accion || 'alta'}`;
+      const icon        = TIPO_ICON[r.tipo] || 'ti-activity';
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="tipo-icon ${tipoClass}"><i class="ti ${icon}"></i></div>
+            <span class="text-small">${TIPO_LABEL[r.tipo] || r.tipo}</span>
+          </div>
+        </td>
+        <td>
+          <div class="log-detalle">${r.detalle || '—'}</div>
+          ${r.extra?.lumisial ? `<div class="log-meta"><i class="ti ti-building" style="font-size:10px"></i> ${r.extra.lumisial}</div>` : ''}
+        </td>
+        <td><span class="badge ${accionClass}">${ACCION_LABEL[r.accion] || r.accion}</span></td>
+        <td class="text-small">${r.usuario || '—'}</td>
+        <td class="text-small text-muted">${fecha}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filtrar() {
+    const texto   = document.getElementById('buscar').value.toLowerCase();
+    const tipo    = document.getElementById('filtroTipo').value;
+    const accion  = document.getElementById('filtroAccion').value;
+    const usuario = document.getElementById('filtroUsuario').value;
+    const desde   = document.getElementById('filtroDesde').value;
+    const hasta   = document.getElementById('filtroHasta').value;
+
+    const filtered = registros.filter(r => {
+      const fecha = r.fecha?.toDate ? r.fecha.toDate() : null;
+      const matchTexto   = !texto   || (r.detalle || '').toLowerCase().includes(texto) || (r.usuario || '').toLowerCase().includes(texto);
+      const matchTipo    = !tipo    || r.tipo    === tipo;
+      const matchAccion  = !accion  || r.accion  === accion;
+      const matchUsuario = !usuario || r.usuario === usuario;
+      const matchDesde   = !desde   || (fecha && fecha >= new Date(desde));
+      const matchHasta   = !hasta   || (fecha && fecha <= new Date(hasta + 'T23:59:59'));
+      return matchTexto && matchTipo && matchAccion && matchUsuario && matchDesde && matchHasta;
+    });
+
+    renderMetrics(filtered);
+    renderTabla(filtered);
+  }
+
+  function setupFiltros() {
+    ['buscar','filtroTipo','filtroAccion','filtroUsuario','filtroDesde','filtroHasta']
+      .forEach(id => document.getElementById(id).addEventListener('input', filtrar));
+  }
+
+  // Exportar Excel
+  document.getElementById('btnExcel').addEventListener('click', async () => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+    document.head.appendChild(script);
+    script.onload = () => {
+      const rows = registros.map(r => ({
+        'Tipo':     TIPO_LABEL[r.tipo]    || r.tipo,
+        'Acción':   ACCION_LABEL[r.accion]|| r.accion,
+        'Detalle':  r.detalle || '—',
+        'Usuario':  r.usuario || '—',
+        'Lumisial': r.extra?.lumisial || '—',
+        'Fecha':    r.fecha?.toDate ? r.fecha.toDate().toLocaleString('es-AR') : '—',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = Object.keys(rows[0]).map(k => ({
+        wch: Math.max(k.length, ...rows.map(r => String(r[k] || '').length)) + 2
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+      XLSX.writeFile(wb, `historial_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.xlsx`);
+    };
+  });
+
+  // Limpiar historial
+  document.getElementById('btnLimpiar').addEventListener('click', async () => {
+    if (!confirm('¿Eliminar todo el historial? Esta acción no se puede deshacer.')) return;
+    for (const r of registros) {
+      await deleteDoc(doc(db, 'historial', r.id));
+    }
+    registros = [];
+    renderMetrics([]);
+    renderTabla([]);
+    document.getElementById('mTotal').textContent        = '0';
+    document.getElementById('mMiembros').textContent     = '0';
+    document.getElementById('mPagos').textContent        = '0';
+    document.getElementById('mComprobantes').textContent = '0';
+  });
+</script>
+</body>
+</html>

@@ -121,6 +121,7 @@
 
 <script type="module">
   import { requireAuth } from './js/auth.js';
+  import { registrarHistorial } from './js/historial.js';
   import { db } from './js/firebase-config.js';
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -280,7 +281,12 @@
 
   window.eliminarPago = async (id) => {
     if (!confirm('¿Eliminar este pago?')) return;
+    const p = pagos.find(x => x.id === id);
     await deleteDoc(doc(db, 'pagos', id));
+    await registrarHistorial('pago', 'baja',
+      `Pago eliminado: ${p?.miembroNombre || '—'} — $${p?.monto || 0} (${p?.periodo || '—'})`,
+      { pagoId: id, miembro: p?.miembroNombre, monto: p?.monto, lumisial: p?.parroquia }
+    );
     await cargarPagos();
   };
 
@@ -317,9 +323,17 @@
     const id = document.getElementById('pagoId').value;
     if (id) {
       await updateDoc(doc(db, 'pagos', id), datos);
+      await registrarHistorial('pago', 'edicion',
+        `Pago editado: ${datos.miembroNombre} — $${datos.monto} (${datos.periodo})`,
+        { pagoId: id, miembro: datos.miembroNombre, monto: datos.monto, lumisial: datos.parroquia }
+      );
     } else {
       datos.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'pagos'), datos);
+      const ref = await addDoc(collection(db, 'pagos'), datos);
+      await registrarHistorial('pago', 'alta',
+        `Nuevo pago: ${datos.miembroNombre} — $${datos.monto} (${datos.periodo})`,
+        { pagoId: ref.id, miembro: datos.miembroNombre, monto: datos.monto, lumisial: datos.parroquia }
+      );
     }
 
     cerrarModal();

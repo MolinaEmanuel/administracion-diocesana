@@ -127,6 +127,7 @@
 
 <script type="module">
   import { requireAuth } from './js/auth.js';
+  import { registrarHistorial } from './js/historial.js';
   import { db } from './js/firebase-config.js';
   import {
     collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -244,7 +245,12 @@
 
   window.eliminarMiembro = async (id) => {
     if (!confirm('¿Eliminar este miembro? Esta acción no se puede deshacer.')) return;
+    const m = miembros.find(x => x.id === id);
     await deleteDoc(doc(db, 'miembros', id));
+    await registrarHistorial('miembro', 'baja',
+      `Miembro eliminado: ${m?.apellido || ''}, ${m?.nombre || ''}`,
+      { miembroId: id, nombre: `${m?.apellido}, ${m?.nombre}`, lumisial: m?.parroquia }
+    );
     await cargarMiembros();
   };
 
@@ -274,9 +280,17 @@
     const id = document.getElementById('miembroId').value;
     if (id) {
       await updateDoc(doc(db, 'miembros', id), datos);
+      await registrarHistorial('miembro', 'edicion',
+        `Miembro editado: ${datos.apellido}, ${datos.nombre}`,
+        { miembroId: id, nombre: `${datos.apellido}, ${datos.nombre}`, lumisial: datos.parroquia }
+      );
     } else {
       datos.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'miembros'), datos);
+      const ref = await addDoc(collection(db, 'miembros'), datos);
+      await registrarHistorial('miembro', 'alta',
+        `Nuevo miembro: ${datos.apellido}, ${datos.nombre}`,
+        { miembroId: ref.id, nombre: `${datos.apellido}, ${datos.nombre}`, lumisial: datos.parroquia }
+      );
     }
 
     cerrarModal();

@@ -71,6 +71,9 @@ function renderSidebar(user, firmante) {
 
   // Sección configuración solo visible para admin
   const configItems = admin ? `
+    <a href="historial.html" class="nav-item ${page === 'historial.html' ? 'active' : ''}">
+      <i class="ti ti-history"></i>Historial
+    </a>
     <div class="nav-section-label">Configuración</div>
     <a href="parroquias.html" class="nav-item ${page === 'parroquias.html' ? 'active' : ''}">
       <i class="ti ti-building"></i>Lumisiales
